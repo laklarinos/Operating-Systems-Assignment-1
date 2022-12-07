@@ -7,6 +7,7 @@
 #include <sys/sem.h>
 #include <string.h>
 
+#define max_line_length 1024
 int countLines(FILE *fp)
 {
     int lines = 0;
@@ -22,57 +23,44 @@ int countLines(FILE *fp)
     return lines;
 }
 
-void create_array_of_txt_lines(FILE *fp, char ***array, int number_of_lines)
+void *create_array_of_txt_lines(FILE *fp, char ***array, int number_of_lines)
 {
-    *array = (char **)malloc(number_of_lines * sizeof(char *));
-
-    // array to keep track of the number of characters
-    // initialize them all with 0s to increase by 1 in each character that is not '\n'
-    int array_of_num_of_chars[number_of_lines];
+    *array = malloc(number_of_lines * sizeof(char *));
     for (int i = 0; i < number_of_lines; i++)
     {
-        array_of_num_of_chars[i] = 0;
+        (*array)[i] = malloc((max_line_length + 1) * sizeof(char));
     }
 
-    // now count all the char's in each line until eof
-    // if c == '\n' dont count it, increase array counter
-    // UNTIL END OF FILE (hopefully)
-    int counter = 0;
-    char c;
-    c = fgetc(fp);
-    while (c != EOF)
+    int j = 0;
+    while (j < number_of_lines)
     {
-        if (c != '\n')
+        if (fgets((*array)[j], max_line_length, fp) == NULL)
+            return NULL;
+        (*array)[j] = realloc((*array)[j], ((strlen((*array)[j])) + 1) * sizeof(char));
+        if ((*array)[j] == NULL)
         {
-            array_of_num_of_chars[counter]++;
+            fprintf(stderr, "ERROR\n");
+            return NULL;
         }
-        else
-        {
-            counter++;
-        }
-        c = fgetc(fp);
+        j++;
     }
-
-    for (int i = 0; i < number_of_lines; i++)
-    {
-        (*array)[i] = (char *)malloc((array_of_num_of_chars[i] + 1) * sizeof(char *));
-    }
-
 }
 
 typedef struct segment
 {
-    char **array_of_lines;
+    // array of pointers to string-lines
+    char ***array_of_lines;
     int num_of_lines;
 } segment;
 
 int main(int argc, char *argv[])
 {
     char *file_name;
+    // number of segments
     int sgmt;
     if (argc < 3)
     {
-        printf("Please specify a file name and a segmentation number.\n");
+        printf("Please specify a file name and a segmentation number. %d\n", argc);
         exit(1);
         // *TO ADD* maybe put scanf
     }
@@ -98,7 +86,14 @@ int main(int argc, char *argv[])
 
     // create array of lines
     char **array_of_txt_lines;
-    create_array_of_txt_lines(fp, &array_of_txt_lines, num_lines);
+    if (create_array_of_txt_lines(fp, &array_of_txt_lines, num_lines) == NULL)
+    {
+        printf("Create_array_of_txt_lines func collapsed.\n");
+        exit(1);
+    }
+
+    // to get pointer at beggining
+    fseek(fp, 0, SEEK_SET);
 
     // first decide how many arrays you will want, based on the number of sgmt
     if (sgmt > num_lines)
@@ -114,28 +109,28 @@ int main(int argc, char *argv[])
     // i will use an array(representing the different segments) of arrays of text lines
     // if sgmt is 0 then we have only 1 segment with all the lines in it
     // array(*) of arrays(**) of strings(char***)
-    segment *array_of_sgmt = (segment *)malloc(sgmt * sizeof(segment *));
-    int num_lines_per_sgmt = num_lines / sgmt;
-    int mod = num_lines % sgmt;
+    segment **array_of_sgmt = malloc(sgmt * sizeof(segment *));
 
-    for (int i = 0; i < sgmt - 1; i++)
+    for (int i = 0; i < sgmt; i++)
     {
-        array_of_sgmt[i].array_of_lines = (char **)malloc(num_lines_per_sgmt * sizeof(char *));
-        array_of_sgmt[i].num_of_lines = num_lines_per_sgmt;
+        array_of_sgmt[i] = malloc(sizeof(segment));
+        array_of_sgmt[i]->array_of_lines = NULL;
+        array_of_sgmt[i]->num_of_lines = 0;
     }
 
-    // the last segment will contain the remaining lines (mod) if exist + the lines the corresponding lines
-    // now i will have the value of (sgmt-1)
-    array_of_sgmt[sgmt - 1].array_of_lines = (char **)malloc((num_lines_per_sgmt + mod) * sizeof(char *));
-    array_of_sgmt[sgmt - 1].num_of_lines = num_lines_per_sgmt + mod;
-
-    // assign lines to segments
-    // for (int i = 0; i < sgmt; i++)
-    // {
-    //     segment *cur_sgmt = &array_of_sgmt[i];
-    //     for (int j = 0; j < cur_sgmt->num_of_lines; j++)
-    //     {
-    //         int len_of_curr_line =
-    //     }
-    // }
+    // every segment grabs a line from the array, until there are no left
+    int rem_lines = num_lines;
+    while (rem_lines > 0)
+    {
+        for (int i = 0; i < sgmt; i++)
+        {
+            if (rem_lines == 0)
+                break;
+            array_of_sgmt[i]->num_of_lines++;
+            array_of_sgmt[i]->array_of_lines = realloc(array_of_sgmt[i]->array_of_lines, array_of_sgmt[i]->num_of_lines * sizeof(char **));
+            array_of_sgmt[i]->array_of_lines[array_of_sgmt[i]->num_of_lines - 1] = &array_of_txt_lines[num_lines - rem_lines];
+            rem_lines--;
+        }
+    }
+    
 }
