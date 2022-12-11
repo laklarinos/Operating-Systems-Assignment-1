@@ -31,6 +31,7 @@ int countLines(FILE *fp)
             lines++;
         }
     }
+    lines++;
     return lines;
 }
 

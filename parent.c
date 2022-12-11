@@ -74,11 +74,13 @@ int main(int argc, char *argv[])
     {
         for (int i = 0; i < sgmt; i++)
         {
+            int j = array_of_sgmt[i]->num_of_lines;
             if (rem_lines == 0)
                 break;
+            array_of_sgmt[i]->array_of_lines = realloc(array_of_sgmt[i]->array_of_lines, (j + 1) * sizeof(char **));
+            array_of_sgmt[i]->array_of_lines[array_of_sgmt[i]->num_of_lines] = &array_of_txt_lines[num_lines - rem_lines];
             array_of_sgmt[i]->num_of_lines++;
-            array_of_sgmt[i]->array_of_lines = realloc(array_of_sgmt[i]->array_of_lines, array_of_sgmt[i]->num_of_lines * sizeof(char **));
-            array_of_sgmt[i]->array_of_lines[array_of_sgmt[i]->num_of_lines - 1] = &array_of_txt_lines[num_lines - rem_lines];
+            // printf("%s, %ld\n", *(array_of_sgmt[i]->array_of_lines[j]), strlen(*(array_of_sgmt[i]->array_of_lines[j])));
             rem_lines--;
         }
     }
@@ -108,14 +110,22 @@ int main(int argc, char *argv[])
     // test
     char segment_to_pass[num_of_lines_per_segment * MAX_LINE_LENGTH];
 
-    for (int i = 0; i < num_of_lines_per_segment * MAX_LINE_LENGTH; i++)
-    {
-        segment_to_pass[i] = '\0';
-    }
+    // the idea here is that for every bunch of MAX_LINE_LENGTH I fill the array with
+    // a dummy character. Then I go and insert the wanted line.
+    // [...(dummy)(dummy)(dummy)...]
+    // [0.....100.....500...1024...]
+    // I do this so that when client goes to critical section, It takes the whole bunch of 1024 to retrieve
+    // the requested line. I do not know the bytes of the line but I know the max size. Thus I make use of it
+    // by retrieving the whole bunch. In that way I seperate the lines. So that a child does not take
+    // half of another next line.
+
+    segment_to_pass[num_of_lines_per_segment * MAX_LINE_LENGTH - 1] = '\0';
 
     for (int i = 0; i < array_of_sgmt[0]->num_of_lines; i++)
     {
-        strcat(segment_to_pass, *(array_of_sgmt[0]->array_of_lines[i]));
+        int offset = i * MAX_LINE_LENGTH;
+        strcpy(segment_to_pass + offset, *(array_of_sgmt[0]->array_of_lines[i]));
+        printf("%d: %s", i, segment_to_pass + offset);
     }
 
     // initializing semaphores
