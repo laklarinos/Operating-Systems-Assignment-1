@@ -16,15 +16,4 @@
     #include <errno.h>
     #define SEM_PERMS (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP)
 
-    typedef struct sharedMem
-    {
-        char* buffer;
-    } sharedMem;
-
-    typedef struct segment
-    {
-        // array of pointers to string-lines
-        char ***array_of_lines;
-        int num_of_lines;
-    } segment;
 #endif

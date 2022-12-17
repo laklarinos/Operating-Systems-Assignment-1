@@ -3,6 +3,7 @@
 
 int main(int argc, char *argv[])
 {
+
     char *file_name;
     char *file_name_out;
     int sgmt;
@@ -23,12 +24,15 @@ int main(int argc, char *argv[])
     else
     {
         file_name = argv[1];
+        file_name_out = "output.txt";
         sgmt = atoi(argv[2]);
         num_of_child = atoi(argv[3]);
         num_of_requests = atoi(argv[4]);
     }
 
     fp = fopen(file_name, "r");
+    fp_out = fopen("output.txt", "w");
+
     if (fp == NULL)
     {
         printf("This file does not exist.\n");
@@ -71,6 +75,7 @@ int main(int argc, char *argv[])
         printf("Create_array_of_txt_lines func collapsed.\n");
         exit(1);
     }
+
     // to get pointer at beggining
     fseek(fp, 0, SEEK_SET);
 
@@ -109,14 +114,16 @@ int main(int argc, char *argv[])
         }
     }
 
-    /**************************** SHARED MEMORY ****************************/
+    // the idea is that I will create an 1D char array containing the lines of each segmen
+    // then I will pass this array through the shared memory
     num_of_lines_per_segment = num_lines / sgmt;
 
-    if ((shmid = shmget(SHMKEY, sizeof(sharedMem) + sizeof(char[num_of_lines_per_segment][MAX_LINE_LENGTH]), PERMS)) < 0)
+    if ((shmid = shmget(SHMKEY, sizeof(sharedMem) + num_of_lines_per_segment * MAX_LINE_LENGTH * sizeof(char *) + sgmt * sizeof(int), PERMS)) < 0)
     {
         fprintf(stderr, "shmget failed.  errno:%d\n", errno);
         exit(1);
     }
+    printf("Creating shared memory with ID: %d\n", shmid);
 
     if ((shmem = (sharedMem *)shmat(shmid, (void *)0, 0)) == (sharedMem *)-1)
     {
@@ -124,7 +131,58 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    /**************************** INITIALIZING SEMAPHORES ****************************/
+    ////////////////////// for char** array ///////////////////////
+    if ((shmid = shmget(SHMKEY2, num_of_lines_per_segment * MAX_LINE_LENGTH * sizeof(char *), PERMS)) < 0)
+    {
+        fprintf(stderr, "shget->buffer failed.  errno:%d\n", errno);
+        exit(1);
+    }
+
+    shmem->buffer = (char **)shmat(shmid, (void *)0, 0);
+    if (shmem->buffer == NULL)
+    {
+        fprintf(stderr, "shmat->buffer failed.  errno:%d\n", errno);
+    }
+    ////////////////////// for char** array ///////////////////////
+
+    ////////////////////// for each entry of char** ///////////////////////
+    // for (int i = 0; i < num_of_lines_per_segment; i++)
+    // {
+    //     if ((shmid = shmget((key_t)((int)SHMKEY4 + i), MAX_LINE_LENGTH * sizeof(char), PERMS)) < 0)
+    //     {
+    //         fprintf(stderr, "shget->buffer failed.  errno:%d\n", errno);
+    //         exit(1);
+    //     }
+
+    //     shmem->buffer[i] = (char *)shmat(shmid, (void *)0, 0);
+    //     if (shmem->buffer[i] == (char *)(-1))
+    //     {
+    //         fprintf(stderr, "shmat->buffer failed.  errno:%d\n", errno);
+    //     }
+    //     shmem->buffer[i][0] = '\0';
+    // }
+    ////////////////////// for each entry of char** ///////////////////////
+
+    ////////////////////// for of int* ///////////////////////
+    if ((shmid = shmget(SHMKEY3, sgmt * sizeof(int), PERMS)) < 0)
+    {
+        fprintf(stderr, "shmget->array_or_read_count failed.  errno:%d\n", errno);
+        exit(1);
+    }
+
+    shmem->array_of_read_count = (int *)shmat(shmid, (void *)0, 0);
+    if (shmem->array_of_read_count == (int *)(-1))
+    {
+        fprintf(stderr, "shmem->array_read_count failed.  errno:%d\n", errno);
+    }
+    ////////////////////// for of int* ///////////////////////
+
+    printf("Attaching shared memory segment. \n");
+
+    // initializing semaphores
+    // beacuse we need multiple processes to gain access of the shared memory,
+    // we cant use binary semaphores, thus
+    // we need counting semaphores...
     char *array_of_sem_names[sgmt];
 
     for (int i = 0; i < sgmt; i++)
@@ -162,6 +220,8 @@ int main(int argc, char *argv[])
     itoa(sgmt, &sgmt_char);
     itoa(num_of_lines_per_segment, &num_of_lines_per_segment_char);
     itoa((int)SHMKEY, &shmkey_char);
+    itoa((int)SHMKEY2, &shmkey2_char);
+    itoa((int)SHMKEY3, &shmkey3_char);
     itoa(num_of_requests, &num_of_requests_char);
 
     for (int i = 0; i < num_of_child; i++)
@@ -169,14 +229,13 @@ int main(int argc, char *argv[])
         pid = fork();
         if (pid < 0)
         {
-            fprintf(stderr, "fork failed.  errno:%d\n", errno);
+            printf("Error forking child.\n");
             exit(1);
         }
         else if (pid == 0)
         {
-
             // children code
-
+            // call execv to run client program
             char *args_to_send[] = {"./child",
                                     sgmt_char,
                                     num_of_lines_per_segment_char,
@@ -185,18 +244,19 @@ int main(int argc, char *argv[])
                                     w_sgmt_sem_name,
                                     r_sgmt_sem_name,
                                     rw_mutex_name,
+                                    file_name_out,
                                     NULL};
             if (execv(args_to_send[0], args_to_send) < 0)
             {
                 perror("Execv");
             }
         }
-        // printf("%s\n", file_name_out);
     }
 
     int requested_sgmt;
     int array_of_requests[num_of_requests * num_of_child];
     int current_sgmt = -1;
+    // shmem->array_of_read_count = malloc(sgmt * sizeof(int));
     for (int i = 0; i < sgmt; i++)
     {
         shmem->array_of_read_count[i] = 0;
@@ -205,8 +265,14 @@ int main(int argc, char *argv[])
 
     while (request_counter < num_of_child * num_of_requests)
     {
-
         // parent increases semaphore and child is unblocked to send request
+        if (sem_wait(rw_mutex) < 0)
+        {
+            fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
+            exit(EXIT_FAILURE);
+        }
+
+        printf("1\n");
         if (sem_post(w_sgmt_sem) < 0)
         {
             fprintf(stderr, "sem_post() failed.  errno:%d\n", errno);
@@ -219,34 +285,36 @@ int main(int argc, char *argv[])
             fprintf(stderr, "sem_post() failed.  errno:%d\n", errno);
             exit(EXIT_FAILURE);
         }
+
         // parent can now read the request
         requested_sgmt = shmem->requested_sgmt;
-
-        if (sem_wait(rw_mutex) < 0)
-        {
-            fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
-            exit(EXIT_FAILURE);
-        }
+        // meanwhile child is waiting for parent to put segment to shared mem
 
         if (shmem->requested_sgmt != current_sgmt)
         {
+            printf("FIRST TIME IN\n");
             // that means, it is the first segment to put
             // putting segment to shared buffer
 
             for (int i = 0; i < array_of_sgmt[requested_sgmt - 1]->num_of_lines; i++)
             {
-                shmem->buffer[i][0] = '\0';
+                char **temp = array_of_sgmt[requested_sgmt - 1]->array_of_lines[i];
+                printf("%ld strlen temp\n", strlen(*temp));
+                printf("%ld strlen buffer\n", strlen(shmem->buffer[i]));
+                printf("%d requested\n", requested_sgmt);
                 memcpy(shmem->buffer[i], *(array_of_sgmt[requested_sgmt - 1]->array_of_lines[i]), MAX_LINE_LENGTH);
             }
-            current_sgmt = requested_sgmt;
-            printf("Changing: %d sgmt to %d sgmt\n", current_sgmt, requested_sgmt);
-        }
 
-        if (sem_post(rw_mutex) < 0)
-        {
-            fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
-            exit(EXIT_FAILURE);
+            current_sgmt = requested_sgmt;
+
+            if (sem_post(rw_mutex) < 0)
+            {
+                fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
+                exit(EXIT_FAILURE);
+            }
         }
+        printf("NOPE\n");
+
         request_counter++;
     }
 
