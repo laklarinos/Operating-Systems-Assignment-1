@@ -176,7 +176,6 @@ int main(int argc, char *argv[])
         {
 
             // children code
-
             char *args_to_send[] = {"./child",
                                     sgmt_char,
                                     num_of_lines_per_segment_char,
@@ -205,7 +204,6 @@ int main(int argc, char *argv[])
 
     while (request_counter < num_of_child * num_of_requests)
     {
-
         // parent increases semaphore and child is unblocked to send request
         if (sem_post(w_sgmt_sem) < 0)
         {
@@ -219,27 +217,26 @@ int main(int argc, char *argv[])
             fprintf(stderr, "sem_post() failed.  errno:%d\n", errno);
             exit(EXIT_FAILURE);
         }
-        // parent can now read the request
-        requested_sgmt = shmem->requested_sgmt;
 
+        // parent can now read the request
         if (sem_wait(rw_mutex) < 0)
         {
             fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
             exit(EXIT_FAILURE);
         }
 
-        if (shmem->requested_sgmt != current_sgmt)
-        {
-            // that means, it is the first segment to put
-            // putting segment to shared buffer
+        requested_sgmt = shmem->requested_sgmt;
 
+        if (current_sgmt != requested_sgmt)
+        {
+            // first segment
             for (int i = 0; i < array_of_sgmt[requested_sgmt - 1]->num_of_lines; i++)
             {
                 shmem->buffer[i][0] = '\0';
                 memcpy(shmem->buffer[i], *(array_of_sgmt[requested_sgmt - 1]->array_of_lines[i]), MAX_LINE_LENGTH);
             }
             current_sgmt = requested_sgmt;
-            printf("Changing: %d sgmt to %d sgmt\n", current_sgmt, requested_sgmt);
+            //printf("Changing: %d sgmt to %d sgmt\n", current_sgmt, requested_sgmt);
         }
 
         if (sem_post(rw_mutex) < 0)

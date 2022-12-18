@@ -22,7 +22,7 @@ int main(int argc, char *argv[])
     strcat(file_name_out, pid_char);
     strcat(file_name_out, ".txt");
 
-    printf("%s\n", file_name_out);  
+    printf("%s\n", file_name_out);
 
     char *w_on_file_out_sem_name = "w_on_file_out";
     int requested_sgmt;
@@ -40,6 +40,7 @@ int main(int argc, char *argv[])
     struct sharedMem *shmem;
     int shmid;
 
+    /**************************** STORING SEMAPHORE NAMES ****************************/
     for (int i = 0; i < sgmt; i++)
     {
         itoa(i + 1, &tmp);
@@ -94,7 +95,6 @@ int main(int argc, char *argv[])
     /**************************** REQUESTS ****************************/
     for (int i = 0; i < num_of_requests; i++)
     {
-
         if (sem_wait(w_sgmt_sem) < 0)
         {
             fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
@@ -125,7 +125,7 @@ int main(int argc, char *argv[])
 
         if (shmem->array_of_read_count[requested_sgmt - 1] == 1)
         {
-            printf("NOT PROCEED: Child %d asked for %d segment\n", getpid(), requested_sgmt);
+            // printf("NOT PROCEED: Child %d asked for %d segment\n", getpid(), requested_sgmt);
             if (sem_wait(rw_mutex) < 0)
             {
                 fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
@@ -134,7 +134,7 @@ int main(int argc, char *argv[])
             // printf("Child %d asked for %d segment\n", getpid(), requested_sgmt);
         }
 
-        printf("PROCEEDS: Child %d asked for %d segment\n", getpid(), requested_sgmt);
+        // printf("PROCEEDS: Child %d asked for %d segment\n", getpid(), requested_sgmt);
         if (sem_post(array_of_sem[requested_sgmt - 1]) < 0)
         {
             fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
@@ -145,11 +145,10 @@ int main(int argc, char *argv[])
 
         char *line = malloc(MAX_LINE_LENGTH * sizeof(char));
         memcpy(line, shmem->buffer[requested_line - 1], MAX_LINE_LENGTH);
-
-        fprintf(fp_out, "%d %d:", requested_sgmt - 1, getpid());
-        fprintf(fp_out, "%s", line);
-
         usleep(20);
+
+        fprintf(fp_out, "%d %d %d:", requested_sgmt - 1, requested_line, getpid());
+        fprintf(fp_out, "%s", line);
 
         if (sem_wait(array_of_sem[requested_sgmt - 1]) < 0)
         {
@@ -158,6 +157,8 @@ int main(int argc, char *argv[])
         }
 
         shmem->array_of_read_count[requested_sgmt - 1]--;
+        printf("Child %d satisfied request for %d segment and line %d\n", getpid(), requested_sgmt, requested_line);
+
         if (shmem->array_of_read_count[requested_sgmt - 1] == 0)
         {
             if (sem_post(rw_mutex) < 0)
