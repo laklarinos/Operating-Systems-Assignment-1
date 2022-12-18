@@ -4,7 +4,7 @@
 
 int main(int argc, char *argv[])
 {
-    srand(time(NULL) ^ (getpid() << 16));
+    //srand(time(NULL) ^ (getpid() << 16));
 
     int key = (int)SHMKEY;
     int sgmt = atoi(argv[1]);
@@ -56,7 +56,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "sem_open() failed.  errno:%d\n", errno);
     }
 
-    if ((w_sgmt_sem = sem_open(w_sgmt_sem_name, O_CREAT, SEM_PERMS, 0)) == SEM_FAILED)
+    if ((w_sgmt_sem = sem_open(w_sgmt_sem_name, O_CREAT, SEM_PERMS, 1)) == SEM_FAILED)
     {
         fprintf(stderr, "sem_open() failed.  errno:%d\n", errno);
     }
@@ -103,7 +103,6 @@ int main(int argc, char *argv[])
 
         requested_sgmt = (rand() % (sgmt - 1 + 1)) + 1;
         requested_line = (rand() % (num_of_lines_per_segment - 1)) + 1;
-        offset = MAX_LINE_LENGTH * (requested_line - 1);
 
         // printf("Child %d asked for %d segment\n", getpid(), requested_sgmt);
         shmem->requested_sgmt = requested_sgmt;
@@ -125,7 +124,7 @@ int main(int argc, char *argv[])
 
         if (shmem->array_of_read_count[requested_sgmt - 1] == 1)
         {
-            // printf("NOT PROCEED: Child %d asked for %d segment\n", getpid(), requested_sgmt);
+            // printf("NOT PROCEED: Child %d asked for %d segment\n", getpid(), requested_sgmt - 1);
             if (sem_wait(rw_mutex) < 0)
             {
                 fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
@@ -141,14 +140,15 @@ int main(int argc, char *argv[])
             exit(EXIT_FAILURE);
         }
 
+        printf("%d %d segment\n", shmem->array_of_read_count[requested_sgmt - 1], requested_sgmt - 1);
         // here grab the line you want
 
         char *line = malloc(MAX_LINE_LENGTH * sizeof(char));
         memcpy(line, shmem->buffer[requested_line - 1], MAX_LINE_LENGTH);
-        usleep(20);
-
         fprintf(fp_out, "%d %d %d:", requested_sgmt - 1, requested_line, getpid());
         fprintf(fp_out, "%s", line);
+        free(line);
+        usleep(20);
 
         if (sem_wait(array_of_sem[requested_sgmt - 1]) < 0)
         {

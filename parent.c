@@ -144,7 +144,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    if ((w_sgmt_sem = sem_open(w_sgmt_sem_name, O_CREAT, SEM_PERMS, 0)) == SEM_FAILED)
+    if ((w_sgmt_sem = sem_open(w_sgmt_sem_name, O_CREAT, SEM_PERMS, 1)) == SEM_FAILED)
     {
         fprintf(stderr, "sem_open() failed.  errno:%d\n", errno);
     }
@@ -204,12 +204,13 @@ int main(int argc, char *argv[])
 
     while (request_counter < num_of_child * num_of_requests)
     {
-        // parent increases semaphore and child is unblocked to send request
-        if (sem_post(w_sgmt_sem) < 0)
-        {
-            fprintf(stderr, "sem_post() failed.  errno:%d\n", errno);
-            exit(EXIT_FAILURE);
-        }
+
+        // // parent increases semaphore and child is unblocked to send request
+        // if (sem_post(w_sgmt_sem) < 0)
+        // {
+        //     fprintf(stderr, "sem_post() failed.  errno:%d\n", errno);
+        //     exit(EXIT_FAILURE);
+        // }
 
         // parent should wait before reading
         if (sem_wait(r_sgmt_sem) < 0)
@@ -227,7 +228,7 @@ int main(int argc, char *argv[])
 
         requested_sgmt = shmem->requested_sgmt;
 
-        if (current_sgmt != requested_sgmt)
+        if (current_sgmt != requested_sgmt && shmem->array_of_read_count[request_counter - 1] == 0)
         {
             // first segment
             for (int i = 0; i < array_of_sgmt[requested_sgmt - 1]->num_of_lines; i++)
@@ -236,7 +237,7 @@ int main(int argc, char *argv[])
                 memcpy(shmem->buffer[i], *(array_of_sgmt[requested_sgmt - 1]->array_of_lines[i]), MAX_LINE_LENGTH);
             }
             current_sgmt = requested_sgmt;
-            //printf("Changing: %d sgmt to %d sgmt\n", current_sgmt, requested_sgmt);
+            // printf("Changing: %d sgmt to %d sgmt\n", current_sgmt, requested_sgmt);
         }
 
         if (sem_post(rw_mutex) < 0)
@@ -244,6 +245,13 @@ int main(int argc, char *argv[])
             fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
             exit(EXIT_FAILURE);
         }
+
+        if (sem_post(w_sgmt_sem) < 0)
+        {
+            fprintf(stderr, "sem_post() failed.  errno:%d\n", errno);
+            exit(EXIT_FAILURE);
+        }
+
         request_counter++;
     }
 
