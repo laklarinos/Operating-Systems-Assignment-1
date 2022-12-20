@@ -14,6 +14,7 @@
     #include <time.h> 
     #include <limits.h>
     #include <errno.h>
+    #include <sys/time.h>
     #define SEM_PERMS (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP)
 
 #endif

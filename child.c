@@ -4,7 +4,7 @@
 
 int main(int argc, char *argv[])
 {
-    //srand(time(NULL) ^ (getpid() << 16));
+    // srand(time(NULL) ^ (getpid() << 16));
 
     int key = (int)SHMKEY;
     int sgmt = atoi(argv[1]);
@@ -21,8 +21,6 @@ int main(int argc, char *argv[])
     file_name_out = malloc((strlen("output") + strlen(pid_char) + strlen(".txt") + 1) * sizeof(char));
     strcat(file_name_out, pid_char);
     strcat(file_name_out, ".txt");
-
-    printf("%s\n", file_name_out);
 
     char *w_on_file_out_sem_name = "w_on_file_out";
     int requested_sgmt;
@@ -95,24 +93,8 @@ int main(int argc, char *argv[])
     /**************************** REQUESTS ****************************/
     for (int i = 0; i < num_of_requests; i++)
     {
-        if (sem_wait(w_sgmt_sem) < 0)
-        {
-            fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
-            exit(EXIT_FAILURE);
-        }
-
-        requested_sgmt = (rand() % (sgmt - 1 + 1)) + 1;
+        requested_sgmt = (rand() % (sgmt - 1)) + 1;
         requested_line = (rand() % (num_of_lines_per_segment - 1)) + 1;
-
-        // printf("Child %d asked for %d segment\n", getpid(), requested_sgmt);
-        shmem->requested_sgmt = requested_sgmt;
-
-        // child done writing, tells parent to proceed to read
-        if (sem_post(r_sgmt_sem) < 0)
-        {
-            fprintf(stderr, "sem_post() failed.  errno:%d\n", errno);
-            exit(EXIT_FAILURE);
-        }
 
         if (sem_wait(array_of_sem[requested_sgmt - 1]) < 0)
         {
@@ -122,32 +104,47 @@ int main(int argc, char *argv[])
 
         shmem->array_of_read_count[requested_sgmt - 1]++;
 
-        if (shmem->array_of_read_count[requested_sgmt - 1] == 1)
+        if (shmem->array_of_read_count[requested_sgmt - 1] == 1 || requested_sgmt != shmem->current_sgmt)
         {
-            // printf("NOT PROCEED: Child %d asked for %d segment\n", getpid(), requested_sgmt - 1);
+            if (sem_wait(w_sgmt_sem) < 0)
+            {
+                fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
+                exit(EXIT_FAILURE);
+            }
+
+            shmem->requested_sgmt = requested_sgmt;
+
+            if (sem_post(r_sgmt_sem) < 0)
+            {
+                fprintf(stderr, "sem_post() failed.  errno:%d\n", errno);
+                exit(EXIT_FAILURE);
+            }
+
             if (sem_wait(rw_mutex) < 0)
             {
                 fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
                 exit(EXIT_FAILURE);
             }
-            // printf("Child %d asked for %d segment\n", getpid(), requested_sgmt);
+
+            shmem->current_sgmt = requested_sgmt;
         }
 
-        // printf("PROCEEDS: Child %d asked for %d segment\n", getpid(), requested_sgmt);
         if (sem_post(array_of_sem[requested_sgmt - 1]) < 0)
         {
             fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
             exit(EXIT_FAILURE);
         }
 
-        printf("%d %d segment\n", shmem->array_of_read_count[requested_sgmt - 1], requested_sgmt - 1);
-        // here grab the line you want
+        if (shmem->current_sgmt != requested_sgmt)
+            printf("%d req segment %d curr segment %d \n", requested_sgmt, shmem->current_sgmt, shmem->array_of_read_count[requested_sgmt - 1]);
 
         char *line = malloc(MAX_LINE_LENGTH * sizeof(char));
         memcpy(line, shmem->buffer[requested_line - 1], MAX_LINE_LENGTH);
-        fprintf(fp_out, "%d %d %d:", requested_sgmt - 1, requested_line, getpid());
+        fprintf(fp_out, "%d %d %d:", requested_sgmt, requested_line, getpid());
         fprintf(fp_out, "%s", line);
         free(line);
+        // printf("%d child, retrieved %d line from %d segment\n", getpid(), requested_line, requested_sgmt);
+        fflush(stdout);
         usleep(20);
 
         if (sem_wait(array_of_sem[requested_sgmt - 1]) < 0)
@@ -157,7 +154,6 @@ int main(int argc, char *argv[])
         }
 
         shmem->array_of_read_count[requested_sgmt - 1]--;
-        printf("Child %d satisfied request for %d segment and line %d\n", getpid(), requested_sgmt, requested_line);
 
         if (shmem->array_of_read_count[requested_sgmt - 1] == 0)
         {

@@ -164,6 +164,16 @@ int main(int argc, char *argv[])
     itoa((int)SHMKEY, &shmkey_char);
     itoa(num_of_requests, &num_of_requests_char);
 
+    int requested_sgmt;
+    int array_of_requests[num_of_requests * num_of_child];
+    int current_sgmt = -1;
+    for (int i = 0; i < sgmt; i++)
+    {
+        shmem->array_of_read_count[i] = 0;
+    }
+    shmem->requested_sgmt = -1;
+    shmem->current_sgmt = -1;
+
     for (int i = 0; i < num_of_child; i++)
     {
         pid = fork();
@@ -193,50 +203,46 @@ int main(int argc, char *argv[])
         // printf("%s\n", file_name_out);
     }
 
-    int requested_sgmt;
-    int array_of_requests[num_of_requests * num_of_child];
-    int current_sgmt = -1;
-    for (int i = 0; i < sgmt; i++)
+    struct timespec ts;
+    if (clock_gettime(CLOCK_REALTIME, &ts) == -1)
     {
-        shmem->array_of_read_count[i] = 0;
+        /* handle error */
+        return -1;
     }
-    shmem->requested_sgmt = -1;
 
+    ts.tv_sec += 10;
     while (request_counter < num_of_child * num_of_requests)
     {
-
-        // // parent increases semaphore and child is unblocked to send request
-        // if (sem_post(w_sgmt_sem) < 0)
-        // {
-        //     fprintf(stderr, "sem_post() failed.  errno:%d\n", errno);
-        //     exit(EXIT_FAILURE);
-        // }
-
-        // parent should wait before reading
-        if (sem_wait(r_sgmt_sem) < 0)
+        // wait to read request
+        if (sem_timedwait(r_sgmt_sem, &ts) < 0)
         {
-            fprintf(stderr, "sem_post() failed.  errno:%d\n", errno);
-            exit(EXIT_FAILURE);
+            if (errno != ETIMEDOUT)
+            {
+                fprintf(stderr, "sem_post() failed.  errno:%d\n", errno);
+                exit(EXIT_FAILURE);
+            }
+            else
+            {
+                printf("Is there anybody?\n");
+                break;
+            }
         }
 
-        // parent can now read the request
+        // got request
         if (sem_wait(rw_mutex) < 0)
         {
             fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
             exit(EXIT_FAILURE);
         }
 
-        requested_sgmt = shmem->requested_sgmt;
-
-        if (current_sgmt != requested_sgmt && shmem->array_of_read_count[request_counter - 1] == 0)
+        if (shmem->current_sgmt != shmem->requested_sgmt && shmem->array_of_read_count[shmem->requested_sgmt - 1] == 1)
         {
             // first segment
-            for (int i = 0; i < array_of_sgmt[requested_sgmt - 1]->num_of_lines; i++)
+            for (int i = 0; i < array_of_sgmt[shmem->requested_sgmt - 1]->num_of_lines; i++)
             {
                 shmem->buffer[i][0] = '\0';
-                memcpy(shmem->buffer[i], *(array_of_sgmt[requested_sgmt - 1]->array_of_lines[i]), MAX_LINE_LENGTH);
+                memcpy(shmem->buffer[i], *(array_of_sgmt[shmem->requested_sgmt - 1]->array_of_lines[i]), MAX_LINE_LENGTH);
             }
-            current_sgmt = requested_sgmt;
             // printf("Changing: %d sgmt to %d sgmt\n", current_sgmt, requested_sgmt);
         }
 

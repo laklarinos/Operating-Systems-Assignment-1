@@ -16,6 +16,7 @@ typedef struct sharedMem
 {
     char buffer[MAX_LINES_PER_SEGMENT][MAX_LINE_LENGTH];
     int requested_sgmt;
+    int current_sgmt;
     int array_of_read_count[MAX_SGMT];
 } sharedMem;
 
