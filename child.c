@@ -134,7 +134,6 @@ int main(int argc, char *argv[])
                 fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
                 exit(EXIT_FAILURE);
             }
-
             if (sem_post(dummy) < 0)
             {
                 fprintf(stderr, "sem_post() failed.  errno:%d\n", errno);

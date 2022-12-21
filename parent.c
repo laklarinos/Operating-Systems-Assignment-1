@@ -36,6 +36,7 @@ int main(int argc, char *argv[])
     }
 
     int num_lines = 0;
+    int prob;
     char **array_of_txt_lines;
     segment **array_of_sgmt = malloc(sgmt * sizeof(segment *));
     int rem_lines;
@@ -229,32 +230,31 @@ int main(int argc, char *argv[])
             exit(EXIT_FAILURE);
         }
 
-        
-
-        if (sem_post(w_sgmt_sem) < 0)
+        prob = (rand() % (10 - 1)) + 1;
+        if (prob > 7 || shmem->current_sgmt == -1)
         {
-            fprintf(stderr, "sem_post() failed.  errno:%d\n", errno);
-            exit(EXIT_FAILURE);
-        }
-
-        if (sem_timedwait(r_sgmt_sem, &ts) < 0)
-        {
-            if (errno != ETIMEDOUT)
+            if (sem_post(w_sgmt_sem) < 0)
             {
                 fprintf(stderr, "sem_post() failed.  errno:%d\n", errno);
                 exit(EXIT_FAILURE);
             }
-            else
+
+            if (sem_timedwait(r_sgmt_sem, &ts) < 0)
             {
-                printf("Is there anybody?\n");
-                break;
+                if (errno != ETIMEDOUT)
+                {
+                    fprintf(stderr, "sem_post() failed.  errno:%d\n", errno);
+                    exit(EXIT_FAILURE);
+                }
+                else
+                {
+                    printf("Is there anybody?\n");
+                    break;
+                }
             }
-        }
 
-        requested_sgmt = shmem->requested_sgmt;
+            requested_sgmt = shmem->requested_sgmt;
 
-        if (shmem->current_sgmt != shmem->requested_sgmt && shmem->array_of_read_count[shmem->requested_sgmt - 1] == 1)
-        {
             for (int i = 0; i < array_of_sgmt[shmem->requested_sgmt - 1]->num_of_lines; i++)
             {
                 shmem->buffer[i][0] = '\0';
@@ -263,18 +263,62 @@ int main(int argc, char *argv[])
 
             shmem->current_sgmt = requested_sgmt;
             prev_current_sgmt = shmem->current_sgmt;
-        }
+            //}
+            if (sem_post(rw_mutex) < 0)
+            {
+                fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
+                exit(EXIT_FAILURE);
+            }
 
-        if (sem_post(rw_mutex) < 0)
-        {
-            fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
-            exit(EXIT_FAILURE);
+            if (sem_wait(dummy) < 0)
+            {
+                fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
+                exit(EXIT_FAILURE);
+            }
         }
-
-        if (sem_wait(dummy) < 0)
+        else if (prob <= 7 && shmem->array_of_read_count[shmem->current_sgmt - 1] == 0)
         {
-            fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
-            exit(EXIT_FAILURE);
+            if (sem_post(w_sgmt_sem) < 0)
+            {
+                fprintf(stderr, "sem_post() failed.  errno:%d\n", errno);
+                exit(EXIT_FAILURE);
+            }
+
+            if (sem_timedwait(r_sgmt_sem, &ts) < 0)
+            {
+                if (errno != ETIMEDOUT)
+                {
+                    fprintf(stderr, "sem_post() failed.  errno:%d\n", errno);
+                    exit(EXIT_FAILURE);
+                }
+                else
+                {
+                    printf("Is there anybody?\n");
+                    break;
+                }
+            }
+
+            requested_sgmt = shmem->requested_sgmt;
+
+            for (int i = 0; i < array_of_sgmt[shmem->requested_sgmt - 1]->num_of_lines; i++)
+            {
+                shmem->buffer[i][0] = '\0';
+                memcpy(shmem->buffer[i], *(array_of_sgmt[shmem->requested_sgmt - 1]->array_of_lines[i]), MAX_LINE_LENGTH);
+            }
+
+            shmem->current_sgmt = requested_sgmt;
+            prev_current_sgmt = shmem->current_sgmt;
+            if (sem_post(rw_mutex) < 0)
+            {
+                fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
+                exit(EXIT_FAILURE);
+            }
+
+            if (sem_wait(dummy) < 0)
+            {
+                fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
+                exit(EXIT_FAILURE);
+            }
         }
     }
 
