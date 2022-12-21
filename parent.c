@@ -49,18 +49,23 @@ int main(int argc, char *argv[])
     char *r_sgmt_sem_name = "r_sgmt_sem";
     char *sem_name = "sem_";
     char *rw_mutex_name = "rw_mutex";
+    char *dummy_name = "dummy";
     char *shmkey_char;
     char *shmkey2_char;
     char *shmkey3_char;
     char *sgmt_char;
     char *num_of_lines_per_segment_char;
     char *num_of_requests_char;
+    char *array_of_sem_names[sgmt];
 
     sem_t **array_of_sem = malloc(sgmt * sizeof(sem_t));
     sem_t *r_sgmt_sem;
     sem_t *w_sgmt_sem;
     sem_t *rw_mutex;
+    sem_t *dummy;
     num_lines = countLines(fp);
+
+    struct timespec ts;
 
     // to get pointer at beggining
     fseek(fp, 0, SEEK_SET);
@@ -74,7 +79,6 @@ int main(int argc, char *argv[])
     // to get pointer at beggining
     fseek(fp, 0, SEEK_SET);
 
-    // first decide how many arrays you will want, based on the number of sgmt
     if (sgmt > num_lines)
     {
         printf("Segmentation is greater than the number of lines.\n");
@@ -92,7 +96,6 @@ int main(int argc, char *argv[])
         array_of_sgmt[i]->num_of_lines = 0;
     }
 
-    // every segment grabs a line from the array, until there are no left
     rem_lines = num_lines;
     while (rem_lines > 0)
     {
@@ -104,7 +107,6 @@ int main(int argc, char *argv[])
             array_of_sgmt[i]->array_of_lines = realloc(array_of_sgmt[i]->array_of_lines, (j + 1) * sizeof(char **));
             array_of_sgmt[i]->array_of_lines[array_of_sgmt[i]->num_of_lines] = &array_of_txt_lines[num_lines - rem_lines];
             array_of_sgmt[i]->num_of_lines++;
-            // printf("%s, %ld\n", *(array_of_sgmt[i]->array_of_lines[j]), strlen(*(array_of_sgmt[i]->array_of_lines[j])));
             rem_lines--;
         }
     }
@@ -125,8 +127,6 @@ int main(int argc, char *argv[])
     }
 
     /**************************** INITIALIZING SEMAPHORES ****************************/
-    char *array_of_sem_names[sgmt];
-
     for (int i = 0; i < sgmt; i++)
     {
         itoa(i + 1, &tmp);
@@ -159,6 +159,12 @@ int main(int argc, char *argv[])
         fprintf(stderr, "sem_open() failed.  errno:%d\n", errno);
     }
 
+    if ((dummy = sem_open(dummy_name, O_CREAT, SEM_PERMS, 0)) == SEM_FAILED)
+    {
+        fprintf(stderr, "sem_open() failed.  errno:%d\n", errno);
+    }
+
+    /**************************** PREPROCESSING BEFORE EXEC ****************************/
     itoa(sgmt, &sgmt_char);
     itoa(num_of_lines_per_segment, &num_of_lines_per_segment_char);
     itoa((int)SHMKEY, &shmkey_char);
@@ -168,6 +174,7 @@ int main(int argc, char *argv[])
     int array_of_requests[num_of_requests * num_of_child];
     int current_sgmt = -1;
     int prev_current_sgmt = -1;
+
     for (int i = 0; i < sgmt; i++)
     {
         shmem->array_of_read_count[i] = 0;
@@ -176,6 +183,7 @@ int main(int argc, char *argv[])
     shmem->current_sgmt = -1;
     shmem->requests = 0;
 
+    /**************************** GIVE BIRTH  ****************************/
     for (int i = 0; i < num_of_child; i++)
     {
         pid = fork();
@@ -196,33 +204,32 @@ int main(int argc, char *argv[])
                                     w_sgmt_sem_name,
                                     r_sgmt_sem_name,
                                     rw_mutex_name,
+                                    dummy_name,
                                     NULL};
             if (execv(args_to_send[0], args_to_send) < 0)
             {
                 perror("Execv");
             }
         }
-        // printf("%s\n", file_name_out);
     }
 
-    struct timespec ts;
     if (clock_gettime(CLOCK_REALTIME, &ts) == -1)
     {
-        /* handle error */
-        return -1;
+        fprintf(stderr, "clock_gettime() failed. errno:%d", errno);
     }
 
     ts.tv_sec += 10;
+
+    /**************************** HANDLE REQUESTS ****************************/
     while (shmem->requests <= num_of_child * num_of_requests)
     {
-
-        // wait to read request
-
         if (sem_wait(rw_mutex) < 0)
         {
             fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
             exit(EXIT_FAILURE);
         }
+
+        
 
         if (sem_post(w_sgmt_sem) < 0)
         {
@@ -248,7 +255,6 @@ int main(int argc, char *argv[])
 
         if (shmem->current_sgmt != shmem->requested_sgmt && shmem->array_of_read_count[shmem->requested_sgmt - 1] == 1)
         {
-            // first segment
             for (int i = 0; i < array_of_sgmt[shmem->requested_sgmt - 1]->num_of_lines; i++)
             {
                 shmem->buffer[i][0] = '\0';
@@ -264,10 +270,115 @@ int main(int argc, char *argv[])
             fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
             exit(EXIT_FAILURE);
         }
-        request_counter++;
-        usleep(20);
+
+        if (sem_wait(dummy) < 0)
+        {
+            fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
+            exit(EXIT_FAILURE);
+        }
     }
 
+    /**************************** CLOSING SEMAPHORES ****************************/
     while ((wpid = wait(&status)) > 0)
         ;
+
+    if (sem_close(r_sgmt_sem) < 0)
+    {
+        perror("sem_close(3) 1 failed");
+        exit(EXIT_FAILURE);
+    }
+
+    if (sem_close(w_sgmt_sem) < 0)
+    {
+        perror("sem_close(3) 2 failed");
+        exit(EXIT_FAILURE);
+    }
+
+    if (sem_close(rw_mutex) < 0)
+    {
+        perror("sem_close(3) 3 failed");
+        exit(EXIT_FAILURE);
+    }
+
+    for (int i = 0; i < sgmt; i++)
+    {
+        if (sem_close(array_of_sem[i]) < 0)
+        {
+            perror("sem_close(3) 3 failed");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    if (sem_close(dummy) < 0)
+    {
+        perror("sem_close(3) 3 failed");
+        exit(EXIT_FAILURE);
+    }
+
+    /**************************** UNLINKING SEMAPHORES ****************************/
+    if (sem_unlink(r_sgmt_sem_name) < 0)
+    {
+        perror("sem_close(3) 1 failed");
+        exit(EXIT_FAILURE);
+    }
+
+    if (sem_unlink(w_sgmt_sem_name) < 0)
+    {
+        perror("sem_close(3) 2 failed");
+        exit(EXIT_FAILURE);
+    }
+
+    if (sem_unlink(rw_mutex_name) < 0)
+    {
+        perror("sem_close(3) 3 failed");
+        exit(EXIT_FAILURE);
+    }
+
+    for (int i = 0; i < sgmt; i++)
+    {
+        if (sem_unlink(array_of_sem_names[i]) < 0)
+        {
+            perror("sem_close(3) 3 failed");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    if (sem_unlink(dummy_name) < 0)
+    {
+        perror("sem_close(3) 3 failed");
+        exit(EXIT_FAILURE);
+    }
+
+    /**************************** CLOSING SHARED MEMORY ****************************/
+    if (shmdt(shmem) == -1)
+    {
+        perror("SharedMem dt");
+        exit(EXIT_FAILURE);
+    }
+    if (shmctl(shmid, IPC_RMID, 0) == -1)
+    {
+        perror("ShmCtl");
+        exit(EXIT_FAILURE);
+    }
+
+    /**************************** DEALLOCATING MEMORY ****************************/
+    for (int i = 0; i < sgmt; i++)
+    {
+        free(array_of_sgmt[i]->array_of_lines);
+        free(array_of_sgmt[i]);
+    }
+
+    free(array_of_sgmt);
+
+    for (int i = 0; i < sgmt; i++)
+    {
+        free(array_of_sem_names[i]);
+    }
+    free(array_of_sem);
+
+    for (int i = 0; i < num_lines; i++)
+    {
+        free(array_of_txt_lines[i]);
+    }
+    free(array_of_txt_lines);
 }
