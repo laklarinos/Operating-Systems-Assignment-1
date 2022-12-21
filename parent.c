@@ -144,7 +144,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    if ((w_sgmt_sem = sem_open(w_sgmt_sem_name, O_CREAT, SEM_PERMS, 1)) == SEM_FAILED)
+    if ((w_sgmt_sem = sem_open(w_sgmt_sem_name, O_CREAT, SEM_PERMS, 0)) == SEM_FAILED)
     {
         fprintf(stderr, "sem_open() failed.  errno:%d\n", errno);
     }
@@ -167,12 +167,14 @@ int main(int argc, char *argv[])
     int requested_sgmt;
     int array_of_requests[num_of_requests * num_of_child];
     int current_sgmt = -1;
+    int prev_current_sgmt = -1;
     for (int i = 0; i < sgmt; i++)
     {
         shmem->array_of_read_count[i] = 0;
     }
     shmem->requested_sgmt = -1;
     shmem->current_sgmt = -1;
+    shmem->requests = 0;
 
     for (int i = 0; i < num_of_child; i++)
     {
@@ -211,9 +213,23 @@ int main(int argc, char *argv[])
     }
 
     ts.tv_sec += 10;
-    while (request_counter < num_of_child * num_of_requests)
+    while (shmem->requests <= num_of_child * num_of_requests)
     {
+
         // wait to read request
+
+        if (sem_wait(rw_mutex) < 0)
+        {
+            fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
+            exit(EXIT_FAILURE);
+        }
+
+        if (sem_post(w_sgmt_sem) < 0)
+        {
+            fprintf(stderr, "sem_post() failed.  errno:%d\n", errno);
+            exit(EXIT_FAILURE);
+        }
+
         if (sem_timedwait(r_sgmt_sem, &ts) < 0)
         {
             if (errno != ETIMEDOUT)
@@ -228,12 +244,7 @@ int main(int argc, char *argv[])
             }
         }
 
-        // got request
-        if (sem_wait(rw_mutex) < 0)
-        {
-            fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
-            exit(EXIT_FAILURE);
-        }
+        requested_sgmt = shmem->requested_sgmt;
 
         if (shmem->current_sgmt != shmem->requested_sgmt && shmem->array_of_read_count[shmem->requested_sgmt - 1] == 1)
         {
@@ -243,7 +254,9 @@ int main(int argc, char *argv[])
                 shmem->buffer[i][0] = '\0';
                 memcpy(shmem->buffer[i], *(array_of_sgmt[shmem->requested_sgmt - 1]->array_of_lines[i]), MAX_LINE_LENGTH);
             }
-            // printf("Changing: %d sgmt to %d sgmt\n", current_sgmt, requested_sgmt);
+
+            shmem->current_sgmt = requested_sgmt;
+            prev_current_sgmt = shmem->current_sgmt;
         }
 
         if (sem_post(rw_mutex) < 0)
@@ -251,14 +264,8 @@ int main(int argc, char *argv[])
             fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
             exit(EXIT_FAILURE);
         }
-
-        if (sem_post(w_sgmt_sem) < 0)
-        {
-            fprintf(stderr, "sem_post() failed.  errno:%d\n", errno);
-            exit(EXIT_FAILURE);
-        }
-
         request_counter++;
+        usleep(20);
     }
 
     while ((wpid = wait(&status)) > 0)
