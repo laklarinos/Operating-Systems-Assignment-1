@@ -1,4 +1,4 @@
-#include "includes.h"
+    #include "includes.h"
 #include "helpers.h"
 
 int main(int argc, char *argv[])
@@ -18,7 +18,6 @@ int main(int argc, char *argv[])
     {
         printf("Please specify a file name, a segmentation number and a number of requests. %d\n", argc);
         exit(1);
-        // *TO ADD* maybe put scanf
     }
     else
     {
@@ -219,7 +218,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "clock_gettime() failed. errno:%d", errno);
     }
 
-    ts.tv_sec += 10;
+    ts.tv_sec += 12;
 
     /**************************** HANDLE REQUESTS ****************************/
     while (shmem->requests <= num_of_child * num_of_requests)

@@ -19,9 +19,9 @@ int main(int argc, char *argv[])
     char *pid_char;
 
     itoa((int)getpid(), &pid_char);
-    file_name_out = malloc((strlen("output") + strlen(pid_char) + strlen(".txt") + 1) * sizeof(char));
+    file_name_out = malloc((strlen("output") + strlen(pid_char) + strlen(".log") + 1) * sizeof(char));
     strcat(file_name_out, pid_char);
-    strcat(file_name_out, ".txt");
+    strcat(file_name_out, ".log");
 
     int requested_sgmt;
     int requested_line;
