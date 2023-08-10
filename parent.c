@@ -1,4 +1,4 @@
-    #include "includes.h"
+#include "includes.h"
 #include "helpers.h"
 
 int main(int argc, char *argv[])
@@ -232,6 +232,10 @@ int main(int argc, char *argv[])
         prob = (rand() % (10 - 1)) + 1;
         if (prob > 7 || shmem->current_sgmt == -1)
         {
+            // switch segment, probability higher than 7
+            // or
+            // current segment is -1 which means it is the first ever
+            // segment to be loaded
             if (sem_post(w_sgmt_sem) < 0)
             {
                 fprintf(stderr, "sem_post() failed.  errno:%d\n", errno);
@@ -277,6 +281,9 @@ int main(int argc, char *argv[])
         }
         else if (prob <= 7 && shmem->array_of_read_count[shmem->current_sgmt - 1] == 0)
         {
+            // prob <= 7 means we do not switch the segment
+            // while checking if there is no reader still on queue
+                // if there is none we have to switch the segment
             if (sem_post(w_sgmt_sem) < 0)
             {
                 fprintf(stderr, "sem_post() failed.  errno:%d\n", errno);
@@ -299,6 +306,7 @@ int main(int argc, char *argv[])
 
             requested_sgmt = shmem->requested_sgmt;
 
+            // load segment
             for (int i = 0; i < array_of_sgmt[shmem->requested_sgmt - 1]->num_of_lines; i++)
             {
                 shmem->buffer[i][0] = '\0';
@@ -307,6 +315,7 @@ int main(int argc, char *argv[])
 
             shmem->current_sgmt = requested_sgmt;
             prev_current_sgmt = shmem->current_sgmt;
+            
             if (sem_post(rw_mutex) < 0)
             {
                 fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);

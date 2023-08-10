@@ -100,6 +100,7 @@ int main(int argc, char *argv[])
     /**************************** REQUESTS ****************************/
     for (int i = 0; i < num_of_requests; i++)
     {
+        // generate requests
         requested_sgmt = (rand() % (sgmt - 1)) + 1;
         requested_line = (rand() % (num_of_lines_per_segment - 1)) + 1;
 
@@ -110,6 +111,8 @@ int main(int argc, char *argv[])
             fprintf(stderr, "sem_wait() failed.  errno:%d\n", errno);
             exit(EXIT_FAILURE);
         }
+
+        // readers/writers problem implementation for many readers at the same time
 
         shmem->array_of_read_count[requested_sgmt - 1]++;
 
